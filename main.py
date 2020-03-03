@@ -14,3 +14,8 @@ res = p1.compute([[x] for x in ss_train.x])
 
 plt.scatter(ss_train.x, ss_train.y)
 plt.scatter(ss_train.x, res)
+
+p1 = Perceptron([1, 5, 1], activations=[sigmoid, lambda x: x])
+ss_train = pandas.read_csv('resources/regression/square-simple-training.csv', index_col=0)
+p1.initialize(type="uniform")
+p1.backpropagate([[x] for x in ss_train.x], [[y] for y in ss_train.y])
