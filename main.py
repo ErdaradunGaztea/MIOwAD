@@ -1,21 +1,34 @@
-from Perceptron import Perceptron, sigmoid
+from NeuralNet import NeuralNet, Layer, sigmoid, sigmoid_diff
 import pandas
+import numpy as np
 import matplotlib.pyplot as plt
 
-p1 = Perceptron([1, 5, 1], activations=[sigmoid, lambda x: x])
-p2 = Perceptron([1, 10, 1])
-p3 = Perceptron([1, 5, 5, 1])
+ss_test = pandas.read_csv('resources/regression/square-large-test.csv', index_col=0)
+ss_train = pandas.read_csv('resources/regression/square-large-training.csv', index_col=0)
+print(ss_test.iloc[:10, :])
 
-ss_train = pandas.read_csv('resources/regression/square-simple-training.csv', index_col=0)
-ss_test = pandas.read_csv('resources/regression/square-simple-test.csv', index_col=0)
+nn = NeuralNet(1)\
+    .add_layer(Layer(5, sigmoid, sigmoid_diff))\
+    .add_layer(Layer(5, sigmoid, sigmoid_diff))\
+    .add_layer(Layer(1, lambda act: act, lambda act: 1))\
+    .set_optimizer("momentum", 0.1)
+nn.train(np.transpose(ss_train.iloc[:, :-1]), np.transpose(ss_train.iloc[:, -1:]), learning_rate=0.002,
+         epochs=20, batch_size=10)
+print(nn.get_result())
 
-p1.set_parameters([[[1], [-2], [4], [-4], [10]], [[-10, 100, -15, 25, 17]]], [[5, 0.5, -2, 2, 0], [0]])
-res = p1.compute([[x] for x in ss_train.x])
+nn2 = NeuralNet(1)\
+    .add_layer(Layer(5, sigmoid, sigmoid_diff))\
+    .add_layer(Layer(5, sigmoid, sigmoid_diff))\
+    .add_layer(Layer(1, lambda act: act, lambda act: 1))\
+    .set_optimizer("RMSProp", 0.1)
+nn2.train(np.transpose(ss_train.iloc[:, :-1]), np.transpose(ss_train.iloc[:, -1:]), learning_rate=0.02,
+          epochs=20, batch_size=10, verbose=False)
+print(nn2.get_result())
 
-plt.scatter(ss_train.x, ss_train.y)
-plt.scatter(ss_train.x, res)
-
-p1 = Perceptron([1, 5, 1], activations=[sigmoid, lambda x: x])
-ss_train = pandas.read_csv('resources/regression/square-simple-training.csv', index_col=0)
-p1.initialize(type="uniform")
-p1.backpropagate([[x] for x in ss_train.x], [[y] for y in ss_train.y])
+# plot
+x = np.arange(21)
+plt.plot(x, nn.loss_history, label="momentum")
+plt.plot(x, nn2.loss_history, label="RMSProp")
+plt.xlabel("epoch")
+plt.ylabel("MSE")
+plt.legend()
