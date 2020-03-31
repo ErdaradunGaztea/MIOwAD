@@ -2,15 +2,25 @@ import math
 import numpy as np
 
 
-def sigmoid(x):
+def sigmoid(x, layer):
     return (math.exp(-x) + 1) ** (-1)
 
 
-def sigmoid_diff(x):
-    return sigmoid(x) * (1 - sigmoid(x))
+def sigmoid_diff(x, layer):
+    return sigmoid(x, layer) * (1 - sigmoid(x, layer))
+
+
+def softmax(x, layer):
+    return np.exp(x) / np.exp(layer).sum(0)
+
+
+def softmax_diff(x, layer):
+    return softmax(x, layer) * (1 - softmax(x, layer))
 
 
 def split(data, batch_size):
+    """Splits data into batches."""
+    # implemented because of that transposition; should I get rid of it?
     return [np.transpose(batch) for batch in np.split(np.transpose(data), range(batch_size, data.shape[1], batch_size))]
 
 
@@ -22,16 +32,13 @@ class InputLayer:
     def set_data(self, data):
         self.values = data
 
-    def get_values(self):
-        return self.values
-
 
 class Layer:
     def __init__(self, size, activation, activation_diff):
         # layer parameters
         self.size = size
-        self.activations = np.array([np.vectorize(activation)] * size)
-        self.activation_diffs = np.array([np.vectorize(activation_diff)] * size)
+        self.activations = np.array([activation] * size)
+        self.activation_diffs = np.array([activation_diff] * size)
         self.input = None
         self.weights = None
         self.biases = None
@@ -48,7 +55,8 @@ class Layer:
         self.weights_momentum = None
         self.biases_momentum = None
 
-    def add_input(self, inp, weight_init):
+    def __add_input__(self, inp, weight_init):
+        """Passes reference to input Layer object and initializes weights."""
         self.input = inp
         if weight_init == "uniform":
             self.weights = np.array([[np.random.uniform(0, 1) for _ in range(inp.size)] for _ in range(self.size)])
@@ -59,13 +67,33 @@ class Layer:
         self.weights_momentum = np.array([[0 for _ in range(inp.size)] for _ in range(self.size)])
         self.biases_momentum = np.array([[0] for _ in range(self.size)])
 
-    def predict(self):
+    def __predict__(self):
+        # compute weighted input (input activations + biases), without applying activation function
         self.weighted_input = np.array(self.weights.dot(self.input.values)) + np.array(self.biases)
-        self.values = np.array([activation(value) for activation, value in zip(self.activations, self.weighted_input)])
+        # initialize returned values with zeros
+        self.values = np.zeros(self.weighted_input.shape)
+        # apply activation function to neuron
+        # iterate over observations
+        for i in range(self.weighted_input.shape[1]):
+            # iterate over neurons within layer
+            for j in range(self.weighted_input.shape[0]):
+                # apply neuron activation function to activation values of this neuron and whole layer
+                self.values[j, i] = self.activations[j](self.weighted_input[j, i], self.weighted_input[:, i])
+        # NOTE: there used to be vectorized function, but passing whole layer made it too complicated
 
-    def backpropagate(self, weighted_error=None):
-        self.local_gradient = np.multiply(np.array([activation_diff(value) for activation_diff, value in
-                                                    zip(self.activation_diffs, self.weighted_input)]), weighted_error)
+    def __backpropagate__(self, weighted_error=None):
+        """Makes some mathematical magic and possibly generates uncatched computational errors."""
+        values = np.zeros(self.weighted_input.shape)
+        # apply derivative of activation function to neuron
+        # iterate over observations
+        for i in range(self.weighted_input.shape[1]):
+            # iterate over neurons within layer
+            for j in range(self.weighted_input.shape[0]):
+                # apply derivative of neuron activation function to activation values of this neuron and whole layer
+                values[j, i] = self.activation_diffs[j](self.weighted_input[j, i], self.weighted_input[:, i])
+        self.local_gradient = np.multiply(values, weighted_error)
+        # OPTIMIZATION AREA
+        # only looks scary, but it's simple in fact
         if not self.optimizer:
             self.weights_diff = self.local_gradient.dot(np.transpose(self.input.values))
             self.biases_diff = self.local_gradient.dot(np.ones((self.input.values.shape[1], 1)))
@@ -94,54 +122,69 @@ class NeuralNet:
         self.weight_init = weight_init
 
     def add_layer(self, layer):
-        layer.add_input(self.layers[-1], self.weight_init)
+        """Appends layer to NeuralNet object. Should be given Layer object as parameter."""
+        layer.__add_input__(self.layers[-1], self.weight_init)
         self.layers.append(layer)
         return self
 
     def predict(self, data):
+        """Uses internal weights to predict answer for given data."""
         self.layers[0].set_data(data)
         for layer in self.layers[1:]:
-            layer.predict()
+            layer.__predict__()
 
-    def backpropagate(self, y, learning_rate=0.001):
-        self.layers[-1].backpropagate(self.get_result() - y)
+    def __backpropagate__(self, y, learning_rate=0.001):
+        # compute weight and bias changes for every layer starting with the last
+        self.layers[-1].__backpropagate__(self.get_result() - y)
         for layer, next_layer in zip(reversed(self.layers[1:-1]), reversed(self.layers[2:])):
             weighted_error = np.transpose(next_layer.weights).dot(next_layer.local_gradient)
-            layer.backpropagate(weighted_error)
+            layer.__backpropagate__(weighted_error)
+        # apply computed changes to weights and biases
+        # again, starting with the last layer (I forgot why, seems like it doesn't matter)
         for layer in self.layers[1:]:
             layer.weights -= learning_rate * layer.weights_diff
             layer.biases -= learning_rate * layer.biases_diff
 
     def get_result(self):
+        """Returns last predicted values."""
         return self.layers[-1].values
 
     def get_loss(self, y):
         return np.mean(np.transpose(self.get_result() - y) ** 2)
 
     def set_optimizer(self, optimizer, coefficient):
+        """Adds optimizer to backpropagation algorithm. Passed as string, either \"momentum\" or \"RMSProp\".
+        Also takes coefficient value."""
         for layer in self.layers[1:]:
             layer.optimizer = optimizer
             if optimizer == "momentum" or optimizer == "RMSProp":
                 layer.momentum_coef = coefficient
         return self
 
-    def train(self, data, y, epochs=1000, learning_rate=0.001, batch_size=10, max_loss=0.1, verbose=True):
-        self.loss_history = []
+    def train(self, data, y, epochs=1000, learning_rate=0.001, batch_size=10, verbose=True):
+        """Calls backpropagation algorithm with MSE loss function to fit weights."""
+        # initialize some variables
+        self.loss_history = np.zeros(epochs)
         epoch = 0
+        # initial prediction
         self.predict(data)
-        loss = self.get_loss(y).array[0]
-        self.loss_history.append(loss)
-        while epoch < epochs and loss > max_loss:
+        loss = self.get_loss(y).sum()
+        while epoch < epochs:
             print("Epoch: {}".format(epoch + 1))
+            # split data into batches
             batches = zip(split(data, batch_size), split(y, batch_size))
             for index, batch in enumerate(batches):
+                # make prediction for given batch
                 self.predict(batch[0])
-                self.backpropagate(batch[1], learning_rate)
+                # run backpropagation with given batch
+                self.__backpropagate__(batch[1], learning_rate)
+                # compute loss for whole dataset
                 self.predict(data)
-                loss = self.get_loss(y).array[0]
+                loss = self.get_loss(y).sum()
                 if verbose:
                     print("Batch {0}/{1}".format(index + 1, math.ceil(y.shape[1] / batch_size)))
                     print("Loss: {}".format(loss))
             print("==========================")
-            self.loss_history.append(loss)
+            # save final loss for given epoch
+            self.loss_history[epoch] = loss
             epoch += 1
