@@ -2,22 +2,6 @@ import math
 import numpy as np
 
 
-def sigmoid(x, layer):
-    return (math.exp(-x) + 1) ** (-1)
-
-
-def sigmoid_diff(x, layer):
-    return sigmoid(x, layer) * (1 - sigmoid(x, layer))
-
-
-def softmax(x, layer):
-    return np.exp(x) / np.exp(layer).sum(0)
-
-
-def softmax_diff(x, layer):
-    return softmax(x, layer) * (1 - softmax(x, layer))
-
-
 def split(data, batch_size):
     """Splits data into batches."""
     # implemented because of that transposition; should I get rid of it?
@@ -34,14 +18,15 @@ class InputLayer:
 
 
 class Layer:
-    def __init__(self, size, activation, activation_diff):
+    def __init__(self, size, activation):
         # layer parameters
         self.size = size
-        self.activations = np.array([activation] * size)
-        self.activation_diffs = np.array([activation_diff] * size)
         self.input = None
         self.weights = None
         self.biases = None
+        # activations
+        # setting it like that allows manually setting different activations for different neurons within layer
+        self.activations = np.array([activation] * size)
         # computed values
         self.weighted_input = None
         self.values = None
@@ -78,7 +63,7 @@ class Layer:
             # iterate over neurons within layer
             for j in range(self.weighted_input.shape[0]):
                 # apply neuron activation function to activation values of this neuron and whole layer
-                self.values[j, i] = self.activations[j](self.weighted_input[j, i], self.weighted_input[:, i])
+                self.values[j, i] = self.activations[j].get_function()(self.weighted_input[j, i], self.weighted_input[:, i])
         # NOTE: there used to be vectorized function, but passing whole layer made it too complicated
 
     def __backpropagate__(self, weighted_error=None):
@@ -90,7 +75,7 @@ class Layer:
             # iterate over neurons within layer
             for j in range(self.weighted_input.shape[0]):
                 # apply derivative of neuron activation function to activation values of this neuron and whole layer
-                values[j, i] = self.activation_diffs[j](self.weighted_input[j, i], self.weighted_input[:, i])
+                values[j, i] = self.activations[j].get_derivative()(self.weighted_input[j, i], self.weighted_input[:, i])
         self.local_gradient = np.multiply(values, weighted_error)
         # OPTIMIZATION AREA
         # only looks scary, but it's simple in fact
