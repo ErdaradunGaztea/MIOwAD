@@ -2,17 +2,17 @@ import numpy as np
 
 
 class Activation:
-    """Works mostly as a pair of function and its derivative, it simply looks better this way."""
     def __init__(self, function, derivative):
+        """Works mostly as a pair of function and its derivative, it simply looks better this way."""
         self.function = function
         self.derivative = derivative
 
-    """Used to avoid ambiguous constructions like activation.function(func_params)."""
     def get_function(self):
+        """Used to avoid ambiguous constructions like activation.function(func_params)."""
         return self.function
 
-    """Used to avoid ambiguous constructions like activation.derivative(deriv_params)."""
     def get_derivative(self):
+        """Used to avoid ambiguous constructions like activation.derivative(deriv_params)."""
         return self.derivative
 
 

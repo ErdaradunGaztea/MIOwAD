@@ -1,5 +1,10 @@
 import math
 import numpy as np
+from Optimizers import no_optimizer
+from Weights import zero_init
+from Losses import MSE
+from Regularizations import no_regularization
+from Budget import Budget
 
 
 def split(data, batch_size):
@@ -35,20 +40,14 @@ class Layer:
         self.weights_diff = None
         self.biases_diff = None
         # optimizer
-        self.optimizer = None
-        self.momentum_coef = 0
+        self.optimizer = no_optimizer
         self.weights_momentum = None
         self.biases_momentum = None
 
     def __add_input__(self, inp, weight_init):
         """Passes reference to input Layer object and initializes weights."""
         self.input = inp
-        if weight_init == "uniform":
-            self.weights = np.array([[np.random.uniform(0, 1) for _ in range(inp.size)] for _ in range(self.size)])
-            self.biases = np.array([[np.random.uniform(0, 1)] for _ in range(self.size)])
-        elif weight_init == "normal":
-            self.weights = np.array([[np.random.normal(0, 1) for _ in range(inp.size)] for _ in range(self.size)])
-            self.biases = np.array([[np.random.normal(0, 1)] for _ in range(self.size)])
+        weight_init.initialize(self)
         self.weights_momentum = np.array([[0 for _ in range(inp.size)] for _ in range(self.size)])
         self.biases_momentum = np.array([[0] for _ in range(self.size)])
 
@@ -77,46 +76,18 @@ class Layer:
                 # apply derivative of neuron activation function to activation values of this neuron and whole layer
                 values[j, i] = self.activations[j].get_derivative()(self.weighted_input[j, i], self.weighted_input[:, i])
         self.local_gradient = np.multiply(values, weighted_error)
-        # OPTIMIZATION AREA
-        # only looks scary, but it's simple in fact
-        if not self.optimizer:
-            self.weights_diff = self.local_gradient.dot(np.transpose(self.input.values))
-            self.biases_diff = self.local_gradient.dot(np.ones((self.input.values.shape[1], 1)))
-        elif self.optimizer == "momentum":
-            self.weights_momentum = self.local_gradient.dot(np.transpose(self.input.values)) \
-                                    - self.weights_momentum * self.momentum_coef
-            self.biases_momentum = self.local_gradient.dot(np.ones((self.input.values.shape[1], 1))) \
-                                   - self.biases_momentum * self.momentum_coef
-            self.weights_diff = self.weights_momentum
-            self.biases_diff = self.biases_momentum
-        elif self.optimizer == "RMSProp":
-            self.weights_diff = self.local_gradient.dot(np.transpose(self.input.values))
-            self.biases_diff = self.local_gradient.dot(np.ones((self.input.values.shape[1], 1)))
-            self.weights_momentum = self.weights_momentum * self.momentum_coef + \
-                                    self.weights_diff**2 * (1 - self.momentum_coef)
-            self.biases_momentum = self.biases_momentum * self.momentum_coef + \
-                                   self.biases_diff**2 * (1 - self.momentum_coef)
-            self.weights_diff = self.weights_diff / (self.weights_momentum**0.5)
-            self.biases_diff = self.biases_diff / (self.biases_momentum**0.5)
+        # optimization (computing weight and bias differences mostly)
+        self.optimizer.optimize(self)
 
 
 class NeuralNet:
-    def __init__(self, size, weight_init="uniform"):
+    def __init__(self, size, weight_init=zero_init):
         self.layers = [InputLayer(size)]
+        self.loss = MSE
+        self.regularization = no_regularization
         self.loss_history = None
         self.weight_init = weight_init
-
-    def add_layer(self, layer):
-        """Appends layer to NeuralNet object. Should be given Layer object as parameter."""
-        layer.__add_input__(self.layers[-1], self.weight_init)
-        self.layers.append(layer)
-        return self
-
-    def predict(self, data):
-        """Uses internal weights to predict answer for given data."""
-        self.layers[0].set_data(data)
-        for layer in self.layers[1:]:
-            layer.__predict__()
+        self.budget = Budget()
 
     def __backpropagate__(self, y, learning_rate=0.001):
         # compute weight and bias changes for every layer starting with the last
@@ -127,35 +98,58 @@ class NeuralNet:
         # apply computed changes to weights and biases
         # again, starting with the last layer (I forgot why, seems like it doesn't matter)
         for layer in self.layers[1:]:
-            layer.weights -= learning_rate * layer.weights_diff
+            # modified weight update because of regularization support
+            layer.weights -= learning_rate * (layer.weights_diff + self.regularization.update_weights(layer))
             layer.biases -= learning_rate * layer.biases_diff
+
+    def add_layer(self, layer):
+        """Appends layer to NeuralNet object. Should be given Layer object as parameter."""
+        layer.__add_input__(self.layers[-1], self.weight_init)
+        self.layers.append(layer)
+        return self
+
+    def set_optimizer(self, optimizer):
+        """Adds optimizer to backpropagation algorithm. Should be an object of Optimizer class."""
+        # each layer could possibly has its own optimizer
+        # but usually we want to set references to one optimizer for every layer
+        # so we can tune optimizer's parameters from outside the net
+        for layer in self.layers[1:]:
+            layer.optimizer = optimizer
+        return self
+
+    def set_regularization(self, regularization):
+        self.regularization = regularization
+        return self
+
+    def set_loss(self, loss):
+        """@Deprecated, might cause backpropagation to work incorrectly."""
+        self.loss = loss
+        return self
 
     def get_result(self):
         """Returns last predicted values."""
         return self.layers[-1].values
 
     def get_loss(self, y):
-        return np.mean(np.transpose(self.get_result() - y) ** 2)
-
-    def set_optimizer(self, optimizer, coefficient):
-        """Adds optimizer to backpropagation algorithm. Passed as string, either \"momentum\" or \"RMSProp\".
-        Also takes coefficient value."""
+        weight_loss = 0
         for layer in self.layers[1:]:
-            layer.optimizer = optimizer
-            if optimizer == "momentum" or optimizer == "RMSProp":
-                layer.momentum_coef = coefficient
-        return self
+            weight_loss += self.regularization.compute_loss(layer)
+        return self.loss.compute_loss(self.get_result(), y) + weight_loss
 
-    def train(self, data, y, epochs=1000, learning_rate=0.001, batch_size=10, verbose=True):
+    def train(self, data, y, learning_rate=0.001, batch_size=10, verbose=True):
         """Calls backpropagation algorithm with MSE loss function to fit weights."""
-        # initialize some variables
-        self.loss_history = np.zeros(epochs)
-        epoch = 0
+        # initialize some variables (loss_history with inf because of finding minimum later)
+        self.loss_history = []
         # initial prediction
         self.predict(data)
-        loss = self.get_loss(y).sum()
-        while epoch < epochs:
-            print("Epoch: {}".format(epoch + 1))
+        loss = self.get_loss(y)
+        # check if any dimension returns NaN
+        if any(map(math.isnan, loss)):
+            loss = math.nan
+        else:
+            loss = loss.sum()
+        while not self.budget.finished(self.loss_history):
+            print("Epoch: {}".format(self.budget.epoch + 1))
             # split data into batches
             batches = zip(split(data, batch_size), split(y, batch_size))
             for index, batch in enumerate(batches):
@@ -165,11 +159,22 @@ class NeuralNet:
                 self.__backpropagate__(batch[1], learning_rate)
                 # compute loss for whole dataset
                 self.predict(data)
-                loss = self.get_loss(y).sum()
+                loss = self.get_loss(y)
+                # check if any dimension returns NaN
+                if any(map(math.isnan, loss)):
+                    loss = math.nan
+                else:
+                    loss = loss.sum()
                 if verbose:
                     print("Batch {0}/{1}".format(index + 1, math.ceil(y.shape[1] / batch_size)))
                     print("Loss: {}".format(loss))
             print("==========================")
             # save final loss for given epoch
-            self.loss_history[epoch] = loss
-            epoch += 1
+            self.loss_history.append(loss)
+            self.budget.epoch += 1
+
+    def predict(self, data):
+        """Uses internal weights to predict answer for given data."""
+        self.layers[0].set_data(data)
+        for layer in self.layers[1:]:
+            layer.__predict__()
