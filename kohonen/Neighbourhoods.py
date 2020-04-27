@@ -5,7 +5,7 @@ import numpy as np
 
 class Neighbourhood:
     def __init__(self, impact):
-        """Computes impact of distance on weight change."""
+        """Interface. Computes impact of distance on weight change."""
         self.radius = 1
         self.__impact__ = impact
         self.topology = None

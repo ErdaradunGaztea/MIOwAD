@@ -22,7 +22,7 @@ def __initialize_weights__(node, stats):
 
 class Topology:
     def __init__(self, distance, instantiate):
-        """Contains 1D list of nodes and a method used to convert positions of two nodes
+        """Interface. Contains 1D list of nodes and a method used to convert positions of two nodes
         into distance value between them."""
         # why initialize with empty array if we can create full array later?
         self.nodes = None
