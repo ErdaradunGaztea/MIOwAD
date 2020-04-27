@@ -1,10 +1,13 @@
 import math
+
+import matplotlib.pyplot as plt
 import numpy as np
-from Optimizers import no_optimizer
-from Weights import zero_init
-from Losses import MSE
-from Regularizations import no_regularization
+
 from Budget import Budget
+from Losses import MSE
+from Optimizers import no_optimizer
+from Regularizations import no_regularization
+from Weights import zero_init
 
 
 def split(data, batch_size):
@@ -178,3 +181,13 @@ class NeuralNet:
         self.layers[0].set_data(data)
         for layer in self.layers[1:]:
             layer.__predict__()
+
+    def plot_prediction(self, x, y):
+        """Works for 1D data, that is - one x column and one y column."""
+        self.predict(x)
+        plt.scatter(x, np.transpose(self.get_result()), label="prediction")
+        plt.scatter(x, y, label="true")
+        plt.xlabel("x")
+        plt.ylabel("y")
+        plt.legend()
+        plt.title("Prediction comparison")
