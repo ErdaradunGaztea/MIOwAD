@@ -71,14 +71,15 @@ class KohonenNet:
         return self
 
     def plot(self, iteration=0):
-        """Creates and writes .png file for first two dimensions of training dataset and trained nodes."""
+        """Creates and writes .png file for first two PCA dimensions of training dataset and trained nodes."""
         # scatter training data
-        plt.scatter(self.task.get_x().iloc[:, 0],
-                    self.task.get_x().iloc[:, 1],
+        plt.scatter(self.task.pca_data[:, 0],
+                    self.task.pca_data[:, 1],
                     label="training data")
         # scatter trained weights
-        plt.scatter([node.weights[0] for node in self.topology.nodes],
-                    [node.weights[1] for node in self.topology.nodes],
+        pca_weights = np.array([self.task.pca.components_.dot(node.weights) for node in self.topology.nodes])
+        plt.scatter(pca_weights[:, 0],
+                    pca_weights[:, 1],
                     label="node weights",
                     color='red')
         # add plot description
