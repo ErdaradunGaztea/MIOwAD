@@ -15,7 +15,7 @@ class GeneticAlgorithm:
         self.task = task
         self.selection = exponential_selection_min if task.minimize else exponential_selection_max
         self.crossover = None
-        self.mutation = None
+        self.mutations = []
         # default stop condition is after 100 iterations
         self.stopper = Stopper().set_max_iter(100)
         self.solutions = np.empty((size,), Individual)
@@ -24,12 +24,14 @@ class GeneticAlgorithm:
         """Runs the algorithm until the stop condition is meet, then returns the best of solutions obtained."""
         self.initialize()
         while not self.stopper.stop(self):
-            sys.stdout.write("\rIteration no. {0}".format(self.stopper.iteration))
+            sys.stdout.write("Iteration no. {0}".format(self.stopper.iteration))
             sys.stdout.flush()
             self.cross()
             self.mutate()
             self.evaluate()
             self.select()
+            sys.stdout.write("\rIteration no. {0}; best target: {1}\n".format(
+                self.stopper.iteration, max(map(lambda x: x.target, self.solutions))))
         self.evaluate()
         return self.best_solution()
 
@@ -46,8 +48,9 @@ class GeneticAlgorithm:
         self.solutions = new_solutions
 
     def mutate(self):
-        for indv in self.solutions:
-            self.mutation.mutate(indv)
+        for mutation in self.mutations:
+            for indv in self.solutions:
+                mutation.mutate(indv)
 
     def evaluate(self):
         for indv in self.solutions:
@@ -65,7 +68,7 @@ class GeneticAlgorithm:
         return self
 
     def set_mutation(self, mutation):
-        self.mutation = mutation
+        self.mutations.append(mutation)
         return self
 
     def set_selection(self, selection):

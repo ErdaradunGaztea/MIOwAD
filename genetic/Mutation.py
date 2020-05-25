@@ -12,6 +12,7 @@ class Mutation:
 
     def set_probability(self, probability):
         self.probability = probability
+        return self
 
     def mutate(self, indv):
         if random.random() < self.probability:
